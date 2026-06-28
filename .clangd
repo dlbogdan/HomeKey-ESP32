@@ -2,3 +2,12 @@ CompileFlags:
   CompilationDatabase: build
   Add: [-ferror-limit=0]
   Remove: [-fno-tree-switch-conversion, -fstrict-volatile-bitfields, -march=rv32imc_zicsr_zifencei, -fno-shrink-wrap]
+
+Index:
+  # Re-index dependencies from the ESP-IDF SDK
+  ClangTidy:
+    Add: [-fix]
+
+# Help clangd find ESP-IDF headers more reliably
+Paths:
+  - /Users/dlbogdan/.espressif/v5.5.4/esp-idf/components
