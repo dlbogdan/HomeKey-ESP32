@@ -10,6 +10,7 @@
 #include "HomeKitLock.hpp"
 #include "LockManager.hpp"
 #include "NfcManager.hpp"
+#include "NfcFobManager.hpp"
 #include "ConfigManager.hpp"
 #include "ReaderDataManager.hpp"
 #include "HardwareManager.hpp"
@@ -32,6 +33,7 @@ std::unique_ptr<MqttManager> mqttManager;
 std::unique_ptr<WebServerManager> webServerManager;
 std::unique_ptr<HomeKitLock> homekitLock;
 std::unique_ptr<NfcManager> nfcManager;
+NfcFobManager nfcFobManager;
 
 static dns_server_handle_t dns_server = NULL;
 
@@ -175,6 +177,9 @@ void setup() {
   }
   webServerManager->setNfcManager(nfcManager.get());
   webServerManager->setMqttManager(mqttManager.get());
+  webServerManager->setNfcFobManager(&nfcFobManager);
+  nfcFobManager.begin();
+  lockManager->setNfcFobManager(&nfcFobManager);
   hardwareManager->begin();
   homekitLock->begin();
   lockManager->begin();

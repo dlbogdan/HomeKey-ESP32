@@ -129,3 +129,7 @@
 #define WEB_AUTH_ENABLED false
 #define WEB_AUTH_USERNAME "admin"
 #define WEB_AUTH_PASSWORD "r00tl3ss"
+
+// MIFARE NFC Fob Authentication
+#define NFC_FOB_ENABLED false // Enable MIFARE NFC fob authentication
+#define NFC_FOB_MAX_ENTRIES 32 // Maximum number of NFC fobs that can be stored

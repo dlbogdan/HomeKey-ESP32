@@ -3,6 +3,7 @@
 #include <string>
 #include <map>
 #include <array>
+#include <vector>
 #include "defaults.h"
 #include "esp_log_level.h"
 #include "fmt/format.h"
@@ -224,5 +225,25 @@ namespace espConfig
     uint8_t hkAltActionInitPin = GPIO_HK_ALT_ACTION_INIT_PIN;
     uint8_t hkAltActionInitLedPin = GPIO_HK_ALT_ACTION_INIT_LED_PIN;
     uint16_t hkAltActionInitTimeout = GPIO_HK_ALT_ACTION_INIT_TIMEOUT;
+  };
+
+  /**
+   * @brief MIFARE NFC fob entry for authentication.
+   */
+  struct nfc_fob_entry_t {
+    /** UID of the MIFARE fob (as hex string, e.g. "A1B2C3D4") */
+    std::string uid;
+    /** Optional label/name for the fob */
+    std::string label;
+  };
+
+  /**
+   * @brief MIFARE NFC fob configuration structure.
+   */
+  struct nfc_fob_config_t {
+    /** Enable MIFARE NFC fob authentication */
+    bool enabled = NFC_FOB_ENABLED;
+    /** Array of registered MIFARE fob UIDs */
+    std::vector<nfc_fob_entry_t> fobs;
   };
 } // namespace espConfig

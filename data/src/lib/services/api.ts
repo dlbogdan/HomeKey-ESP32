@@ -1,4 +1,4 @@
-import type { CertificatesStatus, CertificateType, MqttConfig, MiscConfig, ApiResponse, ActionsConfig, ApiError, ApiSuccess, CaptivePortalConfig, WiFiNetwork } from '../types/api';
+import type { CertificatesStatus, CertificateType, MqttConfig, MiscConfig, ApiResponse, ActionsConfig, ApiError, ApiSuccess, CaptivePortalConfig, WiFiNetwork, NfcFobConfig } from '../types/api';
 import { notifications } from '../stores/notifications.svelte.js';
 
 export async function rebootDevice() {
@@ -211,6 +211,101 @@ export async function saveCaptivePortalConfig(config: CaptivePortalConfig): Prom
   }
 }
 
+// NFC Fob management endpoints
+export async function getNfcFobs(): Promise<ApiResponse<NfcFobConfig>> {
+  try {
+    const response = await fetch(`/nfc_fobs`);
+
+    if (!response.ok) {
+      const errorData: ApiError = await response.json();
+      return errorData;
+    }
+
+    const result: ApiResponse<NfcFobConfig> = await response.json();
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error occurred';
+    return { success: false, error: message };
+  }
+}
+
+export async function saveNfcFobs(config: NfcFobConfig): Promise<ApiResponse<undefined>> {
+  try {
+    const response = await fetch(`/nfc_fobs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config),
+    });
+
+    if (!response.ok) {
+      const errorData: ApiError = await response.json();
+      notifications.addError(`Failed to save NFC fob config: ${errorData.error}`);
+      return errorData;
+    }
+
+    const result: ApiSuccess = await response.json();
+    notifications.addSuccess(result.message);
+    return { success: true, message: result.message, data: undefined };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error occurred';
+    notifications.addError(`Failed to save NFC fob config: ${message}`);
+    return { success: false, error: message };
+  }
+}
+
+export async function addNfcFob(uid: string, label: string = ''): Promise<ApiResponse<undefined>> {
+  try {
+    const response = await fetch(`/nfc_fobs/add`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ uid, label }),
+    });
+
+    if (!response.ok) {
+      const errorData: ApiError = await response.json();
+      notifications.addError(`Failed to add NFC fob: ${errorData.error}`);
+      return errorData;
+    }
+
+    const result: ApiSuccess = await response.json();
+    notifications.addSuccess(result.message);
+    return { success: true, message: result.message, data: undefined };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error occurred';
+    notifications.addError(`Failed to add NFC fob: ${message}`);
+    return { success: false, error: message };
+  }
+}
+
+export async function deleteNfcFob(uid: string): Promise<ApiResponse<undefined>> {
+  try {
+    const response = await fetch(`/nfc_fobs/delete`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ uid }),
+    });
+
+    if (!response.ok) {
+      const errorData: ApiError = await response.json();
+      notifications.addError(`Failed to delete NFC fob: ${errorData.error}`);
+      return errorData;
+    }
+
+    const result: ApiSuccess = await response.json();
+    notifications.addSuccess(result.message);
+    return { success: true, message: result.message, data: undefined };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error occurred';
+    notifications.addError(`Failed to delete NFC fob: ${message}`);
+    return { success: false, error: message };
+  }
+}
 export async function scanWiFi(): Promise<ApiResponse<WiFiNetwork[]>> {
   try {
     const response = await fetch(`/wifi_scan`);

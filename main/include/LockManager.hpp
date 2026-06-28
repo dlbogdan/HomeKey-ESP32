@@ -5,6 +5,7 @@
 class HardwareManager;
 class ConfigManager;
 class LockApplication;
+class NfcFobManager;
 
 namespace espConfig { struct misc_config_t; struct actions_config_t; };
 
@@ -61,6 +62,12 @@ public:
      */
     void begin();
 
+    /**
+     * @brief Set the NFC fob manager for fob-based authentication.
+     * @param fobManager Pointer to the NfcFobManager instance.
+     */
+    void setNfcFobManager(NfcFobManager* fobManager) { m_nfcFobManager = fobManager; }
+
     // --- State Getters ---
     int getCurrentState() const;
     int getTargetState() const;
@@ -93,6 +100,7 @@ private:
     AppEventLoop::SubscriptionHandle m_update_state_event;
     AppEventLoop::SubscriptionHandle m_nfc_event;
 
+    NfcFobManager* m_nfcFobManager = nullptr;
     esp_timer_handle_t momentaryStateTimer = nullptr;
 
     static const char* TAG;

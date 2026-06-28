@@ -12,6 +12,7 @@
 #include "HomeSpan.h"
 #include "MqttManager.hpp"
 #include "NfcManager.hpp"
+#include "NfcFobManager.hpp"
 #include "ReaderDataManager.hpp"
 #include "cJSON.h"
 #include "config.hpp"
@@ -85,7 +86,7 @@ static inline std::string cjson_to_string_and_free(cJSON *obj) {
 WebServerManager::WebServerManager(ConfigManager &configManager,
                                    ReaderDataManager &readerDataManager)
     : m_server(nullptr), m_configManager(configManager),
-      m_readerDataManager(readerDataManager), m_mqttManager(nullptr), m_nfcManager(nullptr) {
+      m_readerDataManager(readerDataManager), m_mqttManager(nullptr), m_nfcManager(nullptr), m_nfcFobManager(nullptr) {
 }
 
 /**
@@ -297,6 +298,12 @@ void WebServerManager::setupRoutes() {
       {"/config/save", HTTP_POST, handleSaveConfig, this},
       {"/eth_get_config", HTTP_GET, handleGetEthConfig, this},
       {"/nfc_get_presets", HTTP_GET, handleGetNfcPresets, this},
+
+      // NFC Fob endpoints
+      {"/nfc_fobs", HTTP_GET, handleGetNfcFobs, this},
+      {"/nfc_fobs", HTTP_POST, handleSaveNfcFobs, this},
+      {"/nfc_fobs/add", HTTP_POST, handleAddNfcFob, this},
+      {"/nfc_fobs/delete", HTTP_DELETE, handleDeleteNfcFob, this},
 
       // Action endpoints
       {"/reboot_device", HTTP_POST, handleReboot, this},
@@ -2530,3 +2537,244 @@ esp_err_t WebServerManager::handleCertificateDelete(httpd_req_t *req) {
   httpd_resp_send(req, response.c_str(), HTTPD_RESP_USE_STRLEN);
   return ESP_FAIL;
 }
+
+// ============================================================================
+// NFC Fob Handlers
+// ============================================================================
+
+esp_err_t WebServerManager::handleGetNfcFobs(httpd_req_t *req) {
+ WebServerManager *instance = getInstance(req);
+ if (!instance || !instance->m_nfcFobManager) {
+   httpd_resp_send_500(req);
+   return ESP_FAIL;
+ }
+
+ httpd_resp_set_type(req, "application/json");
+ cJSON *response = cJSON_CreateObject();
+ cJSON_AddBoolToObject(response, "success", true);
+ cJSON_AddStringToObject(response, "message", "NFC fob config retrieved");
+ cJSON *config = cJSON_Parse(instance->m_nfcFobManager->serializeToJson().c_str());
+ if (config) {
+   cJSON_AddItemToObject(response, "data", config);
+ }
+ std::string resp = cjson_to_string_and_free(response);
+ httpd_resp_set_status(req, "200 OK");
+ httpd_resp_send(req, resp.c_str(), resp.length());
+ return ESP_OK;
+}
+
+esp_err_t WebServerManager::handleSaveNfcFobs(httpd_req_t *req) {
+ WebServerManager *instance = getInstance(req);
+ if(!instance->basicAuth(req)){
+   return sendAuthFailure(req);
+ }
+ if (!instance || !instance->m_nfcFobManager) {
+   httpd_resp_send_500(req);
+   return ESP_FAIL;
+ }
+
+ size_t content_len = req->content_len;
+ std::string body;
+ body.resize(content_len + 1);
+ int received = httpd_req_recv(req, body.data(), content_len);
+ if (received < 0) {
+   ESP_LOGE(TAG, "Failed to receive request data");
+   httpd_resp_set_status(req, "400 Bad Request");
+   httpd_resp_sendstr(req, "{\"success\":false,\"error\":\"Failed to receive request\"}");
+   return ESP_FAIL;
+ }
+ body.resize(received);
+
+ esp_err_t err = instance->m_nfcFobManager->deserializeFromJson(body);
+ httpd_resp_set_type(req, "application/json");
+ if (err == ESP_OK) {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(true));
+   cJSON_AddStringToObject(response, "message", "NFC fob config saved");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "200 OK");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_OK;
+ } else {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Failed to save fob config");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "400 Bad Request");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ }
+}
+
+esp_err_t WebServerManager::handleAddNfcFob(httpd_req_t *req) {
+ WebServerManager *instance = getInstance(req);
+ if(!instance->basicAuth(req)){
+   return sendAuthFailure(req);
+ }
+ if (!instance || !instance->m_nfcFobManager) {
+   httpd_resp_send_500(req);
+   return ESP_FAIL;
+ }
+
+ size_t content_len = req->content_len;
+ std::string body;
+ body.resize(content_len + 1);
+ int received = httpd_req_recv(req, body.data(), content_len);
+ if (received < 0) {
+   ESP_LOGE(TAG, "Failed to receive request data");
+   httpd_resp_set_status(req, "400 Bad Request");
+   httpd_resp_sendstr(req, "{\"success\":false,\"error\":\"Failed to receive request\"}");
+   return ESP_FAIL;
+ }
+ body.resize(received);
+
+ cJSON *root = cJSON_Parse(body.c_str());
+ if (!root) {
+   httpd_resp_set_type(req, "application/json");
+   httpd_resp_set_status(req, "400 Bad Request");
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Invalid JSON");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ }
+
+ cJSON *uid = cJSON_GetObjectItem(root, "uid");
+ cJSON *label = cJSON_GetObjectItem(root, "label");
+
+ if (!uid || !cJSON_IsString(uid)) {
+   cJSON_Delete(root);
+   httpd_resp_set_type(req, "application/json");
+   httpd_resp_set_status(req, "400 Bad Request");
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Missing or invalid 'uid' field");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ }
+
+ std::string uidStr = uid->valuestring;
+ std::string labelStr = (label && cJSON_IsString(label)) ? label->valuestring : "";
+
+ esp_err_t err = instance->m_nfcFobManager->addFob(uidStr, labelStr);
+
+ cJSON_Delete(root);
+ httpd_resp_set_type(req, "application/json");
+
+ if (err == ESP_OK) {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(true));
+   cJSON_AddStringToObject(response, "message", "Fob added");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "201 Created");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_OK;
+ } else if (err == ESP_ERR_INVALID_STATE) {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Fob with this UID already exists");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "409 Conflict");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ } else if (err == ESP_ERR_NO_MEM) {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Maximum fob entries reached");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "413 Payload Too Large");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ } else {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Failed to add fob");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "500");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ }
+}
+
+esp_err_t WebServerManager::handleDeleteNfcFob(httpd_req_t *req) {
+ WebServerManager *instance = getInstance(req);
+ if(!instance->basicAuth(req)){
+   return sendAuthFailure(req);
+ }
+ if (!instance || !instance->m_nfcFobManager) {
+   httpd_resp_send_500(req);
+   return ESP_FAIL;
+ }
+
+ size_t content_len = req->content_len;
+ std::string body;
+ body.resize(content_len + 1);
+ int received = httpd_req_recv(req, body.data(), content_len);
+ if (received < 0) {
+   ESP_LOGE(TAG, "Failed to receive request data");
+   httpd_resp_set_status(req, "400 Bad Request");
+   httpd_resp_sendstr(req, "{\"success\":false,\"error\":\"Failed to receive request\"}");
+   return ESP_FAIL;
+ }
+ body.resize(received);
+
+ cJSON *root = cJSON_Parse(body.c_str());
+ if (!root) {
+   httpd_resp_set_type(req, "application/json");
+   httpd_resp_set_status(req, "400 Bad Request");
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Invalid JSON");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ }
+
+ cJSON *uid = cJSON_GetObjectItem(root, "uid");
+ if (!uid || !cJSON_IsString(uid)) {
+   cJSON_Delete(root);
+   httpd_resp_set_type(req, "application/json");
+   httpd_resp_set_status(req, "400 Bad Request");
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Missing or invalid 'uid' field");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ }
+
+ std::string uidStr = uid->valuestring;
+ esp_err_t err = instance->m_nfcFobManager->removeFob(uidStr);
+
+ cJSON_Delete(root);
+ httpd_resp_set_type(req, "application/json");
+
+ if (err == ESP_OK) {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(true));
+   cJSON_AddStringToObject(response, "message", "Fob deleted");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "200 OK");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_OK;
+ } else if (err == ESP_ERR_NOT_FOUND) {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Fob not found");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "404 Not Found");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ } else {
+   cJSON *response = cJSON_CreateObject();
+   cJSON_AddItemToObject(response, "success", cJSON_CreateBool(false));
+   cJSON_AddStringToObject(response, "error", "Failed to delete fob");
+   std::string resp = cjson_to_string_and_free(response);
+   httpd_resp_set_status(req, "500");
+   httpd_resp_send(req, resp.c_str(), resp.length());
+   return ESP_FAIL;
+ }
+}
+

@@ -15,10 +15,11 @@
 	import { diff } from "$lib/utils/objDiff";
 	import HardwareConfig from "$lib/components/HardwareConfig.svelte";
 	import CertManager from "$lib/components/CertManager.svelte";
+	import NfcFobs from "$lib/components/NfcFobs.svelte";
 
 	let { misc, eth, nfcPresets, nfcConnected = $bindable(false), error } = $props();
 
-	let activeTab = $state<'homekit' | 'hardware' | 'network' | 'security'>('homekit');
+	let activeTab = $state<'nfc' | 'homekit' | 'hardware' | 'network' | 'security'>('homekit');
 
 	// svelte-ignore state_referenced_locally
 	let miscConfig = $state<MiscConfig>($state.snapshot(misc));
@@ -36,9 +37,15 @@
 
 	const saveMiscConfig = async (e: any) => {
 		e.preventDefault();
+		e.stopPropagation();
 		try {
 			if (!miscConfig || !misc) return;
-			const result = await saveConfig("misc", diff(misc, miscConfig));
+			const diffResult = diff(misc, miscConfig);
+			// Skip save if no fields have changed
+			if (Object.keys(diffResult).length === 0) {
+				return;
+			}
+			const result = await saveConfig("misc", diffResult);
 			if (result.success) {
 				miscConfig = result.data;
 				misc = result.data;
@@ -238,6 +245,16 @@
 
 			<!-- Tabs -->
 			<div class="flex bg-base-300 p-1 rounded-xl gap-1">
+				<button
+					type="button"
+					class="flex-1 tab flex-col py-2 rounded-lg transition-colors {activeTab === 'nfc' ? 'bg-base-100 text-primary font-medium shadow-sm' : 'text-base-content/60 hover:bg-base-200'}"
+					onclick={() => activeTab = 'nfc'}
+				>
+					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
+						<path stroke-linecap="round" stroke-linejoin="round" d="M9.348 14.651a3.75 3.75 0 0 1 0-5.303m5.304 0a3.75 3.75 0 0 1 0 5.303m-7.425 2.122a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.808-3.808-9.98 0-13.788m13.788 0c3.808 3.808 3.808 9.98 0 13.788M12 12h.008v.008H12V12Z" />
+					</svg>
+					<span class="text-[10px] sm:text-xs mt-0.5">NFC Fobs</span>
+				</button>
 				<button
 					type="button"
 					class="flex-1 tab flex-col py-2 rounded-lg transition-colors {activeTab === 'homekit' ? 'bg-base-100 text-primary font-medium shadow-sm' : 'text-base-content/60 hover:bg-base-200'}"
@@ -552,5 +569,10 @@
 				<button type="button" class="btn btn-outline" onclick={resetForm}>Reset</button>
 			</div>
 		</form>
+
+		<!-- NFC Fobs - rendered outside the form to avoid nested forms -->
+		{#if activeTab === 'nfc'}
+			<NfcFobs error={error} />
+		{/if}
 	{/if}
 </div>

@@ -17,6 +17,7 @@ class ReaderDataManager;
 class SystemManager;
 class MqttManager;
 class NfcManager;
+class NfcFobManager;
 namespace loggable {
 class WebSocketLogSinker;
 }
@@ -69,6 +70,7 @@ public:
   bool basicAuth(httpd_req_t* req);
   void setMqttManager(MqttManager *mqttManager) { m_mqttManager = mqttManager; }
   void setNfcManager(NfcManager *nfcManager) { m_nfcManager = nfcManager; }
+  void setNfcFobManager(NfcFobManager *nfcFobManager) { m_nfcFobManager = nfcFobManager; }
   void broadcastWs(const uint8_t *payload, size_t len, httpd_ws_type_t type);
 
 private:
@@ -132,6 +134,12 @@ private:
   static esp_err_t handleCertificateStatus(httpd_req_t *req);
   static esp_err_t handleCertificateDelete(httpd_req_t *req);
 
+  // NFC Fob endpoints
+  static esp_err_t handleGetNfcFobs(httpd_req_t *req);
+  static esp_err_t handleSaveNfcFobs(httpd_req_t *req);
+  static esp_err_t handleAddNfcFob(httpd_req_t *req);
+  static esp_err_t handleDeleteNfcFob(httpd_req_t *req);
+
   static esp_err_t handleCaptivePortal(httpd_req_t *req);
   static esp_err_t handleGetCaptivePortalConfig(httpd_req_t *req);
   static esp_err_t handleSaveCaptivePortalConfig(httpd_req_t *req);
@@ -183,6 +191,7 @@ private:
   ReaderDataManager &m_readerDataManager;
   MqttManager *m_mqttManager;
   NfcManager *m_nfcManager;
+  NfcFobManager *m_nfcFobManager;
 
   // WebSocket infrastructure
   QueueHandle_t m_wsQueue;

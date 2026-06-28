@@ -3,6 +3,7 @@
 #include "config.hpp"
 #include "LockManager.hpp"
 #include "HardwareManager.hpp"
+#include "NfcFobManager.hpp"
 #include "eventStructs.hpp"
 
 const char* LockManager::TAG = "LockManager";
@@ -76,15 +77,16 @@ LockManager::LockManager(const espConfig::misc_config_t& miscConfig, const espCo
  * action topic.
  */
 void LockManager::begin() {
-  m_nfc_event = AppEventLoop::subscribe(NFC_EVENT, NFC_TAP_EVENT, [&](const uint8_t* data, size_t size){
+  m_nfc_event = AppEventLoop::subscribe(NFC_EVENT, NFC_TAP_EVENT, [this](const uint8_t* data, size_t size){
       if(size == 0 || data == nullptr) return;
       std::span<const uint8_t> payload(data, size);
       std::error_code ec;
       NfcEvent nfc_event = alpaca::deserialize<NfcEvent>(payload, ec);
       if(ec) { ESP_LOGE(TAG, "Failed to deserialize NFC event: %s", ec.message().c_str()); return; }
       ESP_LOGD(TAG, "Received NFC event: %d", nfc_event.type);
-      if(nfc_event.type == HOMEKEY_TAP) {
-        ESP_LOGI(TAG, "Processing NFC tap request...");
+
+      if (nfc_event.type == HOMEKEY_TAP) {
+        ESP_LOGI(TAG, "Processing HomeKey tap request...");
         EventHKTap s = alpaca::deserialize<EventHKTap>(nfc_event.data, ec);
         if (!ec) {
           if (s.status) {
@@ -100,6 +102,38 @@ void LockManager::begin() {
         } else {
           ESP_LOGE(TAG, "Failed to deserialize HomeKey event: %s", ec.message().c_str());
           return;
+        }
+      } else if (nfc_event.type == TAG_TAP) {
+        // Check NFC fob authentication
+        if (!m_nfcFobManager || !m_nfcFobManager->isEnabled()) {
+          ESP_LOGD(TAG, "NFC fob authentication disabled or not configured");
+          return;
+        }
+
+        EventTagTap tagEvent = alpaca::deserialize<EventTagTap>(nfc_event.data, ec);
+        if (ec) {
+          ESP_LOGE(TAG, "Failed to deserialize tag event: %s", ec.message().c_str());
+          return;
+        }
+
+        // Convert UID bytes to hex string
+        std::string uidStr;
+        for (size_t i = 0; i < tagEvent.uid.size(); i++) {
+          uidStr += fmt::format("{:02X}", tagEvent.uid[i]);
+        }
+
+        if (m_nfcFobManager->isFobRegistered(uidStr)) {
+          ESP_LOGI(TAG, "NFC fob authenticated: UID=%s", uidStr.c_str());
+          if (m_miscConfig.lockAlwaysUnlock) {
+            setTargetState(lockStates::UNLOCKED, Source::NFC);
+          } else if (m_miscConfig.lockAlwaysLock) {
+            setTargetState(lockStates::LOCKED, Source::NFC);
+          } else {
+            int newState = (m_currentState == lockStates::LOCKED) ? lockStates::UNLOCKED : lockStates::LOCKED;
+            setTargetState(newState, Source::NFC);
+          }
+        } else {
+          ESP_LOGW(TAG, "Unrecognized NFC fob: UID=%s", uidStr.c_str());
         }
       }
     });

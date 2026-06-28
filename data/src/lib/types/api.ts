@@ -538,6 +538,28 @@ export interface ApiSuccess<T = any> {
 }
 
 /**
+ * MIFARE NFC fob entry for authentication
+ * @type {NfcFobEntry}
+ */
+export interface NfcFobEntry {
+  /** UID of the MIFARE fob (hex string) */
+  uid: string;
+  /** Optional label/name for the fob */
+  label: string;
+}
+
+/**
+ * MIFARE NFC fob configuration
+ * @type {NfcFobConfig}
+ */
+export interface NfcFobConfig {
+  /** Enable MIFARE NFC fob authentication */
+  enabled: boolean;
+  /** Array of registered MIFARE fobs */
+  fobs: NfcFobEntry[];
+}
+
+/**
  * Union type for API responses (success or error)
  * @type {ApiResponse<T>}
  * @template T - The type of data in successful responses
