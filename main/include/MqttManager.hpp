@@ -63,6 +63,12 @@ public:
      */
     void end();
 
+    /**
+      * @brief Set the NFC fob manager for fob-based MQTT operations.
+      * @param fobManager Pointer to the NfcFobManager instance.
+      */
+    void setNfcFobManager(class NfcFobManager* fobManager) { m_nfcFobManager = fobManager; }
+
 private:
     /**
       * @brief Publishes the current state of the lock.
@@ -88,6 +94,12 @@ private:
       * @param sak Pointer to the SAK byte array (can be null).
       */
     void publishUidTap(const std::vector<uint8_t>& uid, const std::array<uint8_t,2> &atqa, const uint8_t &sak);
+
+    /**
+      * @brief Publishes the current NFC fob configuration state.
+      */
+    void publishNfcFobState();
+
     // --- Event Handling ---
     static void mqttEventHandler(void* handler_args, esp_event_base_t base, int32_t event_id, void* event_data);
     void onMqttEvent(esp_event_base_t base, int32_t event_id, void* event_data);
@@ -118,6 +130,7 @@ private:
     AppEventLoop::SubscriptionHandle m_lock_state_changed;
     AppEventLoop::SubscriptionHandle m_alt_action;
     AppEventLoop::SubscriptionHandle m_nfc_event;
+    NfcFobManager* m_nfcFobManager = nullptr;
 
     // Status tracking (replaces event-based status publishing)
     MqttErrorCode m_lastErrorCode = MqttErrorCode::NONE;

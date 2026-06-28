@@ -4,6 +4,7 @@
 #include "LockManager.hpp"
 #include "ConfigManager.hpp"
 #include "JsonGuard.hpp"
+#include "NfcFobManager.hpp"
 #include <cstdlib>
 #include <esp_log.h>
 #include <esp_app_desc.h>
@@ -343,6 +344,17 @@ void MqttManager::onConnected() {
         ret = esp_mqtt_client_subscribe(m_client, m_mqttConfig.lockCustomStateCmd.c_str(), 0);
         if (ret < 0) ESP_LOGW(TAG, "Failed to subscribe to lockCustomStateCmd");
     }
+    ret = esp_mqtt_client_subscribe(m_client, m_mqttConfig.nfcFobStateCmdTopic.c_str(), 0);
+    if (ret < 0) ESP_LOGW(TAG, "Failed to subscribe to nfcFobStateCmdTopic");
+    ret = esp_mqtt_client_subscribe(m_client, m_mqttConfig.nfcFobAddCmdTopic.c_str(), 0);
+    if (ret < 0) ESP_LOGW(TAG, "Failed to subscribe to nfcFobAddCmdTopic");
+    ret = esp_mqtt_client_subscribe(m_client, m_mqttConfig.nfcFobDeleteCmdTopic.c_str(), 0);
+    if (ret < 0) ESP_LOGW(TAG, "Failed to subscribe to nfcFobDeleteCmdTopic");
+
+    // Publish initial NFC fob state
+    if (m_nfcFobManager) {
+        publishNfcFobState();
+    }
 
     if (m_mqttConfig.hassMqttDiscoveryEnabled) {
         publishHassDiscovery();
@@ -436,6 +448,45 @@ void MqttManager::onData(const std::string& topic, const std::string& data) {
         std::vector<uint8_t> event_data;
         alpaca::serialize(event, event_data);
         AppEventLoop::publish(HK_EVENT, HK_INTERNAL_EVENT, event_data.data(), event_data.size());
+    } else if (topic == m_mqttConfig.nfcFobStateCmdTopic) {
+        // Enable/disable NFC fob authentication
+        if (data == "1" || data == "true") {
+            if (m_nfcFobManager) {
+                m_nfcFobManager->setEnabled(true);
+                publishNfcFobState();
+            }
+        } else {
+            if (m_nfcFobManager) {
+                m_nfcFobManager->setEnabled(false);
+                publishNfcFobState();
+            }
+        }
+    } else if (topic == m_mqttConfig.nfcFobAddCmdTopic && m_nfcFobManager) {
+        // Add a new NFC fob (JSON payload: {"uid":"A1B2C3D4","label":"My Fob"})
+        cJSON *root = cJSON_Parse(data.c_str());
+        if (root) {
+            cJSON *uid = cJSON_GetObjectItem(root, "uid");
+            cJSON *label = cJSON_GetObjectItem(root, "label");
+            if (uid && cJSON_IsString(uid)) {
+                std::string uidStr = uid->valuestring;
+                std::string labelStr = (label && cJSON_IsString(label)) ? label->valuestring : "";
+                m_nfcFobManager->addFob(uidStr, labelStr);
+                publishNfcFobState();
+            }
+            cJSON_Delete(root);
+        }
+    } else if (topic == m_mqttConfig.nfcFobDeleteCmdTopic && m_nfcFobManager) {
+        // Delete an NFC fob (JSON payload: {"uid":"A1B2C3D4"})
+        cJSON *root = cJSON_Parse(data.c_str());
+        if (root) {
+            cJSON *uid = cJSON_GetObjectItem(root, "uid");
+            if (uid && cJSON_IsString(uid)) {
+                std::string uidStr = uid->valuestring;
+                m_nfcFobManager->removeFob(uidStr);
+                publishNfcFobState();
+            }
+            cJSON_Delete(root);
+        }
     }
 }
 
@@ -481,6 +532,18 @@ void MqttManager::publishHomeKeyTap(const std::vector<uint8_t>& issuerId, const 
         .addBool("homekey", true)
         .toStringUnformatted();
     publish(m_mqttConfig.hkTopic, payload);
+}
+
+/**
+ * @brief Publish the current NFC fob configuration state to the configured MQTT topic.
+ *
+ * Serializes the NFC fob configuration (enabled flag and list of registered fobs)
+ * to JSON and publishes it to the configured NFC fob state topic.
+ */
+void MqttManager::publishNfcFobState() {
+    if (!m_nfcFobManager) return;
+    std::string payload = m_nfcFobManager->serializeToJson();
+    publish(m_mqttConfig.nfcFobStateTopic, payload, 0, true);
 }
 
 /**

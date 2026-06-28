@@ -180,6 +180,7 @@ void setup() {
   webServerManager->setNfcFobManager(&nfcFobManager);
   nfcFobManager.begin();
   lockManager->setNfcFobManager(&nfcFobManager);
+  mqttManager->setNfcFobManager(&nfcFobManager);
   hardwareManager->begin();
   homekitLock->begin();
   lockManager->begin();

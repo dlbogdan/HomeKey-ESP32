@@ -105,6 +105,10 @@ namespace espConfig
       lockCustomStateCmd.append(id).append("/" MQTT_CUSTOM_STATE_CTRL_TOPIC);
       btrLvlCmdTopic.append(id).append("/" MQTT_PROX_BAT_TOPIC);
       hkAltActionTopic.append(id).append("/" MQTT_HK_ALT_ACTION_TOPIC);
+      nfcFobStateTopic.append(id).append("/" MQTT_NFC_FOB_STATE_TOPIC);
+      nfcFobStateCmdTopic.append(id).append("/" MQTT_NFC_FOB_STATE_CTRL_TOPIC);
+      nfcFobAddCmdTopic.append(id).append("/" MQTT_NFC_FOB_ADD_CTRL_TOPIC);
+      nfcFobDeleteCmdTopic.append(id).append("/" MQTT_NFC_FOB_DELETE_CTRL_TOPIC);
     };
     /* MQTT Broker */
     std::string mqttBroker = MQTT_HOST;
@@ -121,6 +125,11 @@ namespace espConfig
     std::string lockTStateCmd;
     std::string btrLvlCmdTopic;
     std::string hkAltActionTopic;
+    /* MQTT NFC Fob */
+    std::string nfcFobStateTopic;
+    std::string nfcFobStateCmdTopic;
+    std::string nfcFobAddCmdTopic;
+    std::string nfcFobDeleteCmdTopic;
     /* MQTT Custom State */
     std::string lockCustomStateTopic;
     std::string lockCustomStateCmd;

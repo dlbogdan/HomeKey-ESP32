@@ -5,6 +5,8 @@
 #include "HardwareManager.hpp"
 #include "NfcFobManager.hpp"
 #include "eventStructs.hpp"
+#include <algorithm>
+#include <string>
 
 const char* LockManager::TAG = "LockManager";
 
@@ -123,7 +125,21 @@ void LockManager::begin() {
         }
 
         if (m_nfcFobManager->isFobRegistered(uidStr)) {
-          ESP_LOGI(TAG, "NFC fob authenticated: UID=%s", uidStr.c_str());
+          // Look up the fob label
+          std::string fobLabel = "";
+          for (const auto& fob : m_nfcFobManager->getFobs()) {
+            std::string fobUid = fob.uid;
+            std::transform(fobUid.begin(), fobUid.end(), fobUid.begin(), ::toupper);
+            if (fobUid == uidStr) {
+              fobLabel = fob.label;
+              break;
+            }
+          }
+          if (!fobLabel.empty()) {
+            ESP_LOGI(TAG, "NFC fob authenticated: UID=%s, label=%s", uidStr.c_str(), fobLabel.c_str());
+          } else {
+            ESP_LOGI(TAG, "NFC fob authenticated: UID=%s", uidStr.c_str());
+          }
           if (m_miscConfig.lockAlwaysUnlock) {
             setTargetState(lockStates::UNLOCKED, Source::NFC);
           } else if (m_miscConfig.lockAlwaysLock) {

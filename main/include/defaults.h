@@ -36,6 +36,10 @@
 #define MQTT_STATE_TOPIC "homekit/state" // MQTT Topic for publishing the HomeKit lock target state
 #define MQTT_PROX_BAT_TOPIC "homekit/set_battery_lvl" // MQTT Control Topic for setting the battery level to be shown in HomeKit
 #define MQTT_HK_ALT_ACTION_TOPIC "alt_action" // MQTT Topic for publishing the Alt Action
+#define MQTT_NFC_FOB_STATE_TOPIC "nfc_fobs/state" // MQTT Topic for publishing NFC fob config state
+#define MQTT_NFC_FOB_STATE_CTRL_TOPIC "nfc_fobs/set_state" // MQTT Control Topic for enabling/disabling NFC fob authentication
+#define MQTT_NFC_FOB_ADD_CTRL_TOPIC "nfc_fobs/add" // MQTT Control Topic for adding a new NFC fob (payload: {"uid":"A1B2C3D4","label":"My Fob"})
+#define MQTT_NFC_FOB_DELETE_CTRL_TOPIC "nfc_fobs/delete" // MQTT Control Topic for deleting an NFC fob (payload: {"uid":"A1B2C3D4"})
 
 // MQTT Custom state
 #define C_UNLOCK 0
