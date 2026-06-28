@@ -529,8 +529,8 @@ void MqttManager::publishHassDiscovery() {
     cJSON_AddItemToArray(identifiers, cJSON_CreateString(macStr.c_str()));
     cJSON_AddItemToObject(device, "identifiers", identifiers);
     cJSON_AddStringToObject(device, "name", device_name.c_str());
-    cJSON_AddStringToObject(device, "manufacturer", "rednblkx");
-    cJSON_AddStringToObject(device, "model", "HomeKey-ESP32");
+    cJSON_AddStringToObject(device, "manufacturer", "Nightshift");
+    cJSON_AddStringToObject(device, "model", "HomeKey");
     cJSON_AddStringToObject(device, "sw_version", esp_app_get_description()->version);
     cJSON_AddStringToObject(device, "configuration_url", fmt::format("http://{}.local", macStr).c_str());
     cJSON_AddStringToObject(device, "serial_number", macStr.c_str());

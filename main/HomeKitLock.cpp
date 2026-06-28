@@ -235,7 +235,7 @@ void HomeKitLock::begin() {
 
     initializeETH();
 
-    homeSpan.begin(Category::Locks, miscConfig.deviceName.c_str(), "HK-", "HomeKey-ESP32");
+    homeSpan.begin(Category::Locks, miscConfig.deviceName.c_str(), "HK-", "HomeKey");
 
     new SpanAccessory();
       new NFCAIS(miscConfig);

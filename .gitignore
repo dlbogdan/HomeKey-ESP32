@@ -13,3 +13,8 @@ gha-creds-*.json
 docs/public
 .direnv/
 build-*/
+.github/.DS_Store
+.gitignore
+main/.DS_Store
+*/.DS_Store
+.DS_Store
