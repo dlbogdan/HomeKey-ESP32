@@ -2642,6 +2642,8 @@ esp_err_t WebServerManager::handleAddNfcFob(httpd_req_t *req) {
 
  cJSON *uid = cJSON_GetObjectItem(root, "uid");
  cJSON *label = cJSON_GetObjectItem(root, "label");
+ cJSON *atqa = cJSON_GetObjectItem(root, "atqa");
+ cJSON *sak = cJSON_GetObjectItem(root, "sak");
 
  if (!uid || !cJSON_IsString(uid)) {
    cJSON_Delete(root);
@@ -2657,8 +2659,10 @@ esp_err_t WebServerManager::handleAddNfcFob(httpd_req_t *req) {
 
  std::string uidStr = uid->valuestring;
  std::string labelStr = (label && cJSON_IsString(label)) ? label->valuestring : "";
+ std::string atqaStr = (atqa && cJSON_IsString(atqa)) ? atqa->valuestring : "";
+ std::string sakStr = (sak && cJSON_IsString(sak)) ? sak->valuestring : "";
 
- esp_err_t err = instance->m_nfcFobManager->addFob(uidStr, labelStr);
+ esp_err_t err = instance->m_nfcFobManager->addFob(uidStr, labelStr, atqaStr, sakStr);
 
  cJSON_Delete(root);
  httpd_resp_set_type(req, "application/json");

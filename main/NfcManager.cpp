@@ -9,12 +9,15 @@
 #include "Pn532Reader.hpp"
 #include "Pn7160Reader.hpp"
 #include "utils.hpp"
+#include "WebServerManager.hpp"
 
 #include <array>
 #include <esp_log.h>
+#include <esp_http_server.h>
 #include <chrono>
 #include <functional>
 #include <serialization.hpp>
+#include <cJSON.h>
 
 const char* NfcManager::TAG = "NfcManager";
 
@@ -580,7 +583,8 @@ void NfcManager::handleHomeKeyAuth() {
  *
  * Constructs an EventTagTap containing the tag UID, ATQA, and SAK, serializes it
  * into an NfcEvent payload, and publishes the serialized event to the NFC event
- * topic.
+ * topic. Also broadcasts the tag data over WebSocket for the frontend to use
+ * when scan mode is active.
  */
 void NfcManager::handleGenericTag(const std::vector<uint8_t>& uid, const std::array<uint8_t,2>& atqa, const uint8_t& sak) {
     EventTagTap s{.uid = uid, .atqa = atqa, .sak = sak};
@@ -590,4 +594,33 @@ void NfcManager::handleGenericTag(const std::vector<uint8_t>& uid, const std::ar
     std::vector<uint8_t> event_data;
     alpaca::serialize(event, event_data);
     AppEventLoop::publish(NFC_EVENT, NFC_TAP_EVENT, event_data.data(), event_data.size());
+
+    // Broadcast tag data over WebSocket for the frontend NFC fob scan feature
+    if (m_webServerManager != nullptr) {
+        cJSON* json = cJSON_CreateObject();
+        cJSON_AddStringToObject(json, "type", "nfc_tag");
+        
+        // Convert UID bytes to JSON array (cast needed since cJSON expects int*)
+        std::vector<int> uidInts(uid.size());
+        for (size_t i = 0; i < uid.size(); i++) uidInts[i] = (int)uid[i];
+        cJSON* uidArr = cJSON_CreateIntArray(uidInts.data(), (int)uid.size());
+        cJSON_AddItemToObject(json, "uid", uidArr);
+        
+        // Convert ATQA bytes to JSON array
+        std::vector<int> atqaInts(atqa.size());
+        for (size_t i = 0; i < atqa.size(); i++) atqaInts[i] = (int)atqa[i];
+        cJSON* atqaArr = cJSON_CreateIntArray(atqaInts.data(), (int)atqa.size());
+        cJSON_AddItemToObject(json, "atqa", atqaArr);
+        
+        cJSON_AddNumberToObject(json, "sak", (int)sak);
+        char* jsonStr = cJSON_PrintUnformatted(json);
+        cJSON_Delete(json);
+        if (jsonStr != nullptr) {
+            m_webServerManager->broadcastWs(
+                reinterpret_cast<const uint8_t*>(jsonStr),
+                strlen(jsonStr),
+                HTTPD_WS_TYPE_TEXT
+            );
+        }
+    }
 }

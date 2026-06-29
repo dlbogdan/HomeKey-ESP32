@@ -45,9 +45,11 @@ public:
      * @brief Add a new NFC fob entry.
      * @param uid The UID of the fob (as hex string).
      * @param label Optional label for the fob.
+     * @param atqa ATQA of the fob (as hex string, e.g. "0004"). Optional for backward compatibility.
+     * @param sak SAK of the fob (as hex string, e.g. "08"). Optional for backward compatibility.
      * @return ESP_OK if added, ESP_ERR_INVALID_STATE if duplicate, ESP_ERR_NO_MEM if full.
      */
-    esp_err_t addFob(const std::string& uid, const std::string& label = "");
+    esp_err_t addFob(const std::string& uid, const std::string& label = "", const std::string& atqa = "", const std::string& sak = "");
 
     /**
      * @brief Remove an NFC fob entry by UID.
@@ -62,6 +64,17 @@ public:
      * @return true if the UID is registered, false otherwise.
      */
     bool isFobRegistered(const std::string& uid) const;
+
+    /**
+     * @brief Check if a given UID with ATQA/SAK matches a registered fob.
+     *        If the registered fob has ATQA/SAK set, they must match exactly.
+     *        If the registered fob has no ATQA/SAK, only UID is checked (backward compat).
+     * @param uid The UID to check (as hex string).
+     * @param atqa ATQA of the scanned tag (as hex string).
+     * @param sak SAK of the scanned tag (as hex string).
+     * @return true if the UID (and optionally ATQA/SAK) matches a registered fob, false otherwise.
+     */
+    bool isFobRegisteredWithParams(const std::string& uid, const std::string& atqa, const std::string& sak) const;
 
     /**
      * @brief Get all registered fobs.

@@ -255,14 +255,18 @@ export async function saveNfcFobs(config: NfcFobConfig): Promise<ApiResponse<und
   }
 }
 
-export async function addNfcFob(uid: string, label: string = ''): Promise<ApiResponse<undefined>> {
+export async function addNfcFob(uid: string, label: string = '', atqa: string = '', sak: string = ''): Promise<ApiResponse<undefined>> {
   try {
+    const payload: Record<string, string> = { uid };
+    if (label) payload.label = label;
+    if (atqa) payload.atqa = atqa;
+    if (sak) payload.sak = sak;
     const response = await fetch(`/nfc_fobs/add`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ uid, label }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

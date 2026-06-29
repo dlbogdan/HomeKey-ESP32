@@ -244,6 +244,10 @@ namespace espConfig
     std::string uid;
     /** Optional label/name for the fob */
     std::string label;
+    /** ATQA (Answer To Reset) — 2 bytes from ISO14443A anti-collision (e.g., "0004") */
+    std::string atqa;
+    /** SAK (Select Acknowledge) — 1 byte from ISO14443A (e.g., "08") */
+    std::string sak;
   };
 
   /**

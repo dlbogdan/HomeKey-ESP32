@@ -15,6 +15,7 @@ class HardwareManager;
 class ReaderDataManager;
 class MqttManager;
 class DDKAuthenticationContext;
+class WebServerManager;
 namespace espConfig { struct misc_config_t; }
 
 class NfcManager {
@@ -93,6 +94,8 @@ private:
     static const char* TAG;
     AppEventLoop::SubscriptionHandle m_hk_event;
 
+    WebServerManager* m_webServerManager = nullptr;
+
 public:
     /**
      * @brief Check if NFC reader is connected.
@@ -111,4 +114,10 @@ public:
      * @return Minor version number.
      */
     uint8_t getFirmwareVersionMinor() const { return m_reader ? m_reader->getFwMinor() : 0; }
+
+    /**
+     * @brief Set the WebServerManager pointer for WebSocket broadcasting.
+     * @param wsManager Pointer to the WebServerManager instance.
+     */
+    void setWebServerManager(WebServerManager* wsManager) { m_webServerManager = wsManager; }
 };

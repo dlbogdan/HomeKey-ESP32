@@ -176,6 +176,7 @@ void setup() {
     nfcManager->begin();
   }
   webServerManager->setNfcManager(nfcManager.get());
+  nfcManager->setWebServerManager(webServerManager.get());
   webServerManager->setMqttManager(mqttManager.get());
   webServerManager->setNfcFobManager(&nfcFobManager);
   nfcFobManager.begin();

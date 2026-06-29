@@ -118,13 +118,18 @@ void LockManager::begin() {
           return;
         }
 
-        // Convert UID bytes to hex string
+        // Convert UID, ATQA, SAK to hex strings
         std::string uidStr;
         for (size_t i = 0; i < tagEvent.uid.size(); i++) {
           uidStr += fmt::format("{:02X}", tagEvent.uid[i]);
         }
+        std::string atqaStr;
+        for (size_t i = 0; i < tagEvent.atqa.size(); i++) {
+          atqaStr += fmt::format("{:02X}", tagEvent.atqa[i]);
+        }
+        std::string sakStr = fmt::format("{:02X}", tagEvent.sak);
 
-        if (m_nfcFobManager->isFobRegistered(uidStr)) {
+        if (m_nfcFobManager->isFobRegisteredWithParams(uidStr, atqaStr, sakStr)) {
           // Look up the fob label
           std::string fobLabel = "";
           for (const auto& fob : m_nfcFobManager->getFobs()) {
@@ -149,7 +154,7 @@ void LockManager::begin() {
             setTargetState(newState, Source::NFC);
           }
         } else {
-          ESP_LOGW(TAG, "Unrecognized NFC fob: UID=%s", uidStr.c_str());
+          ESP_LOGW(TAG, "Unrecognized NFC fob: UID=%s (ATQA=%s, SAK=%s)", uidStr.c_str(), atqaStr.c_str(), sakStr.c_str());
         }
       }
     });

@@ -4,9 +4,13 @@
 
 MIFARE NFC card/fob support for HomeKey-ESP32, allowing users to register and manage NFC fobs as authentication credentials alongside Apple HomeKey.
 
+## Implementation Status
+
+**✅ Fully Implemented** — Core CRUD operations, NVS persistence, Web UI, REST API, MQTT integration, and LockManager authentication integration are all complete.
+
 ## Feature Location in UI
 
-- **System Page** → **NFC Fobs** tab (positioned before HomeKit tab)
+- **System Page** → **NFC Fobs** tab (first tab, before HomeKit)
 - Two sub-tabs:
   - **Configuration**: Enable/disable toggle + Save & Apply
   - **Fob List**: Add/delete registered fobs by UID
@@ -18,7 +22,7 @@ MIFARE NFC card/fob support for HomeKey-ESP32, allowing users to register and ma
 │                        Web UI (Frontend)                        │
 ├─────────────────────────────────────────────────────────────────┤
 │  AppMisc.svelte                                                 │
-│  ├── NFC Fobs Tab Button                                       │
+│  ├── NFC Fobs Tab Button (first tab in System page)            │
 │  └── <NfcFobs> Component                                       │
 │       ├── Configuration Tab                                     │
 │       │   ├── enabled toggle switch                             │
@@ -27,42 +31,57 @@ MIFARE NFC card/fob support for HomeKey-ESP32, allowing users to register and ma
 │           ├── Add Fob Form (UID + Label) → addNfcFob()         │
 │           └── Fob Table → deleteNfcFob() per entry             │
 └─────────────────────────────────────────────────────────────────┘
-                              │
-                              │ REST API (HTTP/JSON)
-                              ▼
+                               │
+                               │ REST API (HTTP/JSON)
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Backend (ESP32)                             │
 ├─────────────────────────────────────────────────────────────────┤
 │  WebServerManager.cpp                                           │
-│  ├── handleGetNfcFobs()     → GET     /nfc_fobs    (200)       │
-│  ├── handleSaveNfcFobs()    → POST    /nfc_fobs/save  (200)    │
+│  ├── handleGetNfcFobs()     → GET     /nfc_fobs        (200)   │
+│  ├── handleSaveNfcFobs()    → POST    /nfc_fobs        (200)   │
 │  ├── handleAddNfcFob()      → POST    /nfc_fobs/add    (201)   │
-│  └── handleDeleteNfcFob()   → DELETE  /nfc_fobs/delete (200)   │
+│  └── handleDeleteNfcFob()   → DELETE  /nfc_fobs/delete  (200)  │
 │                              Errors: 400, 404, 409, 500         │
-│  │                                                             │
-│  └── setNfcFobManager(&nfcFobManager)                         │
+│                                                                 │
+│  setNfcFobManager(&nfcFobManager)                              │
 └─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  NfcFobManager (main/NfcFobManager.cpp)                         │
 │  ├── getFobs()          → serialize nfc_fob_config_t to JSON    │
 │  ├── saveConfig()       → validate + save to NVS + apply        │
 │  ├── addFob(uid, label) → normalize UID + insert + save         │
-│  └── removeFob(uid)     → find + delete + save                  │
-│  │                                                             │
-│  └── NVS Storage: "nfc_fobs" namespace                          │
-│      - "enabled" : uint8_t (0/1)                               │
-│      - "count"   : uint8_t                                     │
-│      - "fobs"    : json array of {uid, label}                  │
+│  │                        UID normalized to uppercase           │
+│  ├── removeFob(uid)     → find + delete + save                 │
+│  ├── isFobRegistered()  → check if UID exists (case-insensitive)│
+│  ├── serializeToJson()  → full config to JSON string           │
+│  ├── deserializeFromJson() → JSON string to config             │
+│  ├── saveToNvs()        → store under NVS "SAVED_DATA"/"NFCFOBDATA" │
+│  └── loadFromNvs()      → load + merge with defaults           │
+│                                                                 │
+│  NVS Storage: "SAVED_DATA" namespace / "NFCFOBDATA" key        │
+│      Stores JSON: {"enabled": bool, "fobs": [{"uid","label"}]} │
+│      No separate "count" field — count derived from array       │
 └─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
+                               │
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  ConfigManager (main/ConfigManager.cpp)                         │
-│  └── NVS get/put for nfc_fob_config_t                          │
-│      Keys: NFC_FOB_ENABLED, NFC_FOB_MAX_ENTRIES                 │
-│      Default: enabled=false, max=32                             │
+│  LockManager Integration                                        │
+│  └── setNfcFobManager(&nfcFobManager)                          │
+│      └── isFobRegistered() called during authentication flow   │
+└─────────────────────────────────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  MqttManager Integration                                        │
+│  └── setNfcFobManager(&nfcFobManager)                          │
+│      └── MQTT topics for remote fob management:                │
+│          - nfc_fobs/state        (get state)                    │
+│          - nfc_fobs/set_state    (enable/disable)               │
+│          - nfc_fobs/add          (add fob)                      │
+│          - nfc_fobs/delete       (delete fob)                   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -92,10 +111,8 @@ namespace espConfig {
   };
 
   struct nfc_fob_config_t {
-    bool enabled;
+    bool enabled = NFC_FOB_ENABLED;  // default: false
     std::vector<nfc_fob_entry_t> fobs;
-    
-    nfc_fob_config_t() : enabled(false) {}
   };
 }
 ```
@@ -116,15 +133,19 @@ Get current NFC fob configuration.
 **Response (200 OK):**
 ```json
 {
-  "enabled": true,
-  "fobs": [
-    { "uid": "A1:B2:C3:D4", "label": "Kitchen Key" },
-    { "uid": "E5:F6:07:18", "label": "Garage Door" }
-  ]
+  "success": true,
+  "data": {
+    "enabled": true,
+    "fobs": [
+      { "uid": "A1:B2:C3:D4", "label": "Kitchen Key" },
+      { "uid": "E5:F6:07:18", "label": "Garage Door" }
+    ]
+  },
+  "message": "NFC fobs retrieved"
 }
 ```
 
-### POST /nfc_fobs/save
+### POST /nfc_fobs
 
 Save full NFC fob configuration.
 
@@ -173,6 +194,15 @@ Delete a fob entry by UID.
 { "success": true, "message": "Fob deleted successfully" }
 ```
 
+## MQTT Topics
+
+| Topic | Direction | Description |
+|-------|-----------|-------------|
+| `nfc_fobs/state` | Publish | Current NFC fob configuration |
+| `nfc_fobs/set_state` | Subscribe | Enable/disable NFC fob authentication |
+| `nfc_fobs/add` | Subscribe | Add a new NFC fob (`{"uid":"A1B2C3D4","label":"My Fob"}`) |
+| `nfc_fobs/delete` | Subscribe | Delete an NFC fob (`{"uid":"A1B2C3D4"}`) |
+
 ## File Reference
 
 | File | Purpose |
@@ -182,7 +212,8 @@ Delete a fob entry by UID.
 | [`main/WebServerManager.cpp`](main/WebServerManager.cpp) | HTTP handler implementations |
 | [`main/include/WebServerManager.hpp`](main/include/WebServerManager.hpp) | Handler declarations + setNfcFobManager() |
 | [`main/main.cpp`](main/main.cpp) | NfcFobManager instantiation + wiring |
-| [`main/CMakeLists.txt`](main/CMakeLists.txt) | NfcFobManager.cpp in SRCS list |
+| [`main/LockManager.cpp`](main/LockManager.cpp) | NFC fob authentication integration |
+| [`main/MqttManager.cpp`](main/MqttManager.cpp) | NFC fob MQTT topic integration |
 | [`main/include/config.hpp`](main/include/config.hpp) | nfc_fob_entry_t and nfc_fob_config_t structs |
 | [`main/include/defaults.h`](main/include/defaults.h) | NFC_FOB_ENABLED and NFC_FOB_MAX_ENTRIES defaults |
 | [`data/src/lib/components/NfcFobs.svelte`](data/src/lib/components/NfcFobs.svelte) | Frontend UI component |
@@ -193,15 +224,51 @@ Delete a fob entry by UID.
 ## Key Design Decisions
 
 1. **UID Normalization**: All UIDs are normalized to uppercase for case-insensitive matching
-2. **NVS Persistence**: Fob config stored in NVS under "nfc_fobs" namespace
-3. **Max Entries**: Configurable via `NFC_FOB_MAX_ENTRIES` (default 32)
+2. **NVS Persistence**: Fob config stored as JSON under NVS key `"NFCFOBDATA"` in namespace `"SAVED_DATA"`
+3. **Max Entries**: Hardcoded to 32 (`MAX_FOB_ENTRIES`) — `NFC_FOB_MAX_ENTRIES` define exists but is not used as a compile-time constant in the manager
 4. **Standalone Manager**: NfcFobManager is a static instance (not unique_ptr) for simple lifetime management
 5. **RESTful API**: Standard HTTP methods and status codes for CRUD operations
-6. **UI Placement**: NFC Fobs tab positioned before HomeKit in the system page tabs
+6. **UI Placement**: NFC Fobs tab is the first tab in the System page (before HomeKit, Hardware, Security)
+7. **Thread Safety**: All public methods use `std::mutex` for thread-safe access
+8. **LockManager Integration**: `isFobRegistered()` called during authentication flow to validate tapped fobs
+9. **MQTT Integration**: Remote fob management via MQTT topics for home automation integration
+10. **JSON-based NVS**: Configuration stored as JSON string (not binary) for easier debugging and migration
+
+## Implementation Details
+
+### NVS Storage Format
+
+```json
+{
+  "enabled": true,
+  "fobs": [
+    { "uid": "A1B2C3D4", "label": "Kitchen Key" }
+  ]
+}
+```
+
+### Lifecycle
+
+1. `NfcFobManager nfcFobManager;` — static global instance in [`main.cpp`](main/main.cpp)
+2. `nfcFobManager.begin()` — loads config from NVS during startup
+3. `webServerManager->setNfcFobManager(&nfcFobManager)` — passes pointer to WebServerManager
+4. `lockManager->setNfcFobManager(&nfcFobManager)` — passes pointer to LockManager
+5. `mqttManager->setNfcFobManager(&nfcFobManager)` — passes pointer to MqttManager
+
+### Error Codes
+
+| Return | Meaning |
+|--------|---------|
+| `ESP_OK` | Success |
+| `ESP_ERR_INVALID_STATE` | Duplicate UID (fob already exists) |
+| `ESP_ERR_NO_MEM` | Maximum fob entries reached (32) |
+| `ESP_ERR_NOT_FOUND` | Fob UID not found for deletion |
+| `ESP_FAIL` | JSON parse failure |
 
 ## Future Considerations
 
-- Integration with authentication flow (checking tapped fob UID against registered list)
 - Bulk import/export of fob lists
 - Fob activity logging
 - Support for additional MIFARE card types beyond UID-based auth
+- UID prefix matching for wildcard fob groups
+- Rate limiting for NFC fob authentication attempts

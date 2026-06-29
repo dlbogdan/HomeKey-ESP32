@@ -462,15 +462,19 @@ void MqttManager::onData(const std::string& topic, const std::string& data) {
             }
         }
     } else if (topic == m_mqttConfig.nfcFobAddCmdTopic && m_nfcFobManager) {
-        // Add a new NFC fob (JSON payload: {"uid":"A1B2C3D4","label":"My Fob"})
+        // Add a new NFC fob (JSON payload: {"uid":"A1B2C3D4","label":"My Fob","atqa":"0004","sak":"08"})
         cJSON *root = cJSON_Parse(data.c_str());
         if (root) {
             cJSON *uid = cJSON_GetObjectItem(root, "uid");
             cJSON *label = cJSON_GetObjectItem(root, "label");
+            cJSON *atqa = cJSON_GetObjectItem(root, "atqa");
+            cJSON *sak = cJSON_GetObjectItem(root, "sak");
             if (uid && cJSON_IsString(uid)) {
                 std::string uidStr = uid->valuestring;
                 std::string labelStr = (label && cJSON_IsString(label)) ? label->valuestring : "";
-                m_nfcFobManager->addFob(uidStr, labelStr);
+                std::string atqaStr = (atqa && cJSON_IsString(atqa)) ? atqa->valuestring : "";
+                std::string sakStr = (sak && cJSON_IsString(sak)) ? sak->valuestring : "";
+                m_nfcFobManager->addFob(uidStr, labelStr, atqaStr, sakStr);
                 publishNfcFobState();
             }
             cJSON_Delete(root);

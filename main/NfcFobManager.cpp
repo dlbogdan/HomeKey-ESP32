@@ -24,12 +24,20 @@ esp_err_t NfcFobManager::setConfig(const espConfig::nfc_fob_config_t& config) {
     return saveToNvs();
 }
 
-esp_err_t NfcFobManager::addFob(const std::string& uid, const std::string& label) {
+esp_err_t NfcFobManager::addFob(const std::string& uid, const std::string& label, const std::string& atqa, const std::string& sak) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // Normalize UID to uppercase
     std::string normalizedUid = uid;
     std::transform(normalizedUid.begin(), normalizedUid.end(), normalizedUid.begin(), ::toupper);
+
+    // Normalize ATQA to uppercase
+    std::string normalizedAtqa = atqa;
+    std::transform(normalizedAtqa.begin(), normalizedAtqa.end(), normalizedAtqa.begin(), ::toupper);
+
+    // Normalize SAK to uppercase
+    std::string normalizedSak = sak;
+    std::transform(normalizedSak.begin(), normalizedSak.end(), normalizedSak.begin(), ::toupper);
 
     // Check for duplicate
     for (const auto& fob : m_config.fobs) {
@@ -50,11 +58,17 @@ esp_err_t NfcFobManager::addFob(const std::string& uid, const std::string& label
     espConfig::nfc_fob_entry_t entry;
     entry.uid = normalizedUid;
     entry.label = label;
+    entry.atqa = normalizedAtqa;
+    entry.sak = normalizedSak;
     m_config.fobs.push_back(entry);
 
     esp_err_t err = saveToNvs();
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Fob added: UID=%s, label=%s", normalizedUid.c_str(), label.c_str());
+        if (!label.empty() || !atqa.empty()) {
+            ESP_LOGI(TAG, "Fob added: UID=%s, label=%s, atqa=%s, sak=%s", normalizedUid.c_str(), label.c_str(), atqa.c_str(), sak.c_str());
+        } else {
+            ESP_LOGI(TAG, "Fob added: UID=%s", normalizedUid.c_str());
+        }
     }
     return err;
 }
@@ -95,6 +109,38 @@ bool NfcFobManager::isFobRegistered(const std::string& uid) const {
     return false;
 }
 
+bool NfcFobManager::isFobRegisteredWithParams(const std::string& uid, const std::string& atqa, const std::string& sak) const {
+    std::string normalizedUid = uid;
+    std::transform(normalizedUid.begin(), normalizedUid.end(), normalizedUid.begin(), ::toupper);
+    std::string normalizedAtqa = atqa;
+    std::transform(normalizedAtqa.begin(), normalizedAtqa.end(), normalizedAtqa.begin(), ::toupper);
+    std::string normalizedSak = sak;
+    std::transform(normalizedSak.begin(), normalizedSak.end(), normalizedSak.begin(), ::toupper);
+
+    for (const auto& fob : m_config.fobs) {
+        std::string fobUid = fob.uid;
+        std::transform(fobUid.begin(), fobUid.end(), fobUid.begin(), ::toupper);
+        if (fobUid != normalizedUid) {
+            continue;
+        }
+
+        // If the registered fob has ATQA/SAK set, they must match exactly
+        if (!fob.atqa.empty() && !fob.sak.empty()) {
+            std::string fobAtqa = fob.atqa;
+            std::string fobSak = fob.sak;
+            std::transform(fobAtqa.begin(), fobAtqa.end(), fobAtqa.begin(), ::toupper);
+            std::transform(fobSak.begin(), fobSak.end(), fobSak.begin(), ::toupper);
+            if (fobAtqa == normalizedAtqa && fobSak == normalizedSak) {
+                return true;
+            }
+        } else {
+            // No ATQA/SAK stored — backward compatibility, only UID match
+            return true;
+        }
+    }
+    return false;
+}
+
 std::vector<espConfig::nfc_fob_entry_t> NfcFobManager::getFobs() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_config.fobs;
@@ -115,6 +161,12 @@ std::string NfcFobManager::serializeToJson() const {
         cJSON *fobObj = cJSON_CreateObject();
         cJSON_AddStringToObject(fobObj, "uid", fob.uid.c_str());
         cJSON_AddStringToObject(fobObj, "label", fob.label.c_str());
+        if (!fob.atqa.empty()) {
+            cJSON_AddStringToObject(fobObj, "atqa", fob.atqa.c_str());
+        }
+        if (!fob.sak.empty()) {
+            cJSON_AddStringToObject(fobObj, "sak", fob.sak.c_str());
+        }
         cJSON_AddItemToArray(fobsArray, fobObj);
     }
     cJSON_AddItemToObject(root, "fobs", fobsArray);
@@ -147,12 +199,22 @@ esp_err_t NfcFobManager::deserializeFromJson(const std::string& json_string) {
             if (cJSON_IsObject(item)) {
                 cJSON *uid = cJSON_GetObjectItem(item, "uid");
                 cJSON *label = cJSON_GetObjectItem(item, "label");
+                cJSON *atqa = cJSON_GetObjectItem(item, "atqa");
+                cJSON *sak = cJSON_GetObjectItem(item, "sak");
                 if (uid && cJSON_IsString(uid)) {
                     espConfig::nfc_fob_entry_t fobEntry;
                     fobEntry.uid = uid->valuestring;
                     std::transform(fobEntry.uid.begin(), fobEntry.uid.end(), fobEntry.uid.begin(), ::toupper);
                     if (label && cJSON_IsString(label)) {
                         fobEntry.label = label->valuestring;
+                    }
+                    if (atqa && cJSON_IsString(atqa)) {
+                        fobEntry.atqa = atqa->valuestring;
+                        std::transform(fobEntry.atqa.begin(), fobEntry.atqa.end(), fobEntry.atqa.begin(), ::toupper);
+                    }
+                    if (sak && cJSON_IsString(sak)) {
+                        fobEntry.sak = sak->valuestring;
+                        std::transform(fobEntry.sak.begin(), fobEntry.sak.end(), fobEntry.sak.begin(), ::toupper);
                     }
                     m_config.fobs.push_back(fobEntry);
                 }
@@ -227,12 +289,22 @@ esp_err_t NfcFobManager::loadFromNvs() {
                     if (cJSON_IsObject(item)) {
                         cJSON *uid = cJSON_GetObjectItem(item, "uid");
                         cJSON *label = cJSON_GetObjectItem(item, "label");
+                        cJSON *atqa = cJSON_GetObjectItem(item, "atqa");
+                        cJSON *sak = cJSON_GetObjectItem(item, "sak");
                         if (uid && cJSON_IsString(uid)) {
                             espConfig::nfc_fob_entry_t fobEntry;
                             fobEntry.uid = uid->valuestring;
                             std::transform(fobEntry.uid.begin(), fobEntry.uid.end(), fobEntry.uid.begin(), ::toupper);
                             if (label && cJSON_IsString(label)) {
                                 fobEntry.label = label->valuestring;
+                            }
+                            if (atqa && cJSON_IsString(atqa)) {
+                                fobEntry.atqa = atqa->valuestring;
+                                std::transform(fobEntry.atqa.begin(), fobEntry.atqa.end(), fobEntry.atqa.begin(), ::toupper);
+                            }
+                            if (sak && cJSON_IsString(sak)) {
+                                fobEntry.sak = sak->valuestring;
+                                std::transform(fobEntry.sak.begin(), fobEntry.sak.end(), fobEntry.sak.begin(), ::toupper);
                             }
                             m_config.fobs.push_back(fobEntry);
                         }

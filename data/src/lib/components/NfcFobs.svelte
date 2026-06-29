@@ -2,6 +2,7 @@
   import { getNfcFobs, saveNfcFobs, addNfcFob, deleteNfcFob } from '$lib/services/api';
   import { isApiError } from '$lib/utils/type-guards';
   import type { NfcFobConfig } from '$lib/types/api';
+  import ws, { type WebSocketEvent } from '$lib/services/ws.js';
 
   let { error }: { error?: string | null } = $props();
 
@@ -12,8 +13,50 @@
 
   let newUid = $state('');
   let newLabel = $state('');
+  let newAtqa = $state('');
+  let newSak = $state('');
   let loading = $state(true);
   let addError = $state('');
+
+  // Scan mode: when active, the component will listen for NFC tag events via WebSocket
+  let scanMode = $state(false);
+  let scanStatus = $state('');
+
+  // Handle incoming WebSocket events for NFC tag scans
+  function handleNfcTagEvent(evt: WebSocketEvent<any>) {
+    if (evt.type === 'message' && evt.data?.type === 'nfc_tag') {
+      const data = evt.data;
+      if (data?.uid && scanMode) {
+        // Convert UID bytes to hex string
+        const uidHex = data.uid.map((b: number) => b.toString(16).toUpperCase().padStart(2, '0')).join('');
+        newUid = uidHex;
+        
+        // Convert ATQA bytes to hex string
+        if (data.atqa && Array.isArray(data.atqa)) {
+          newAtqa = data.atqa.map((b: number) => b.toString(16).toUpperCase().padStart(2, '0')).join('');
+        }
+        
+        // SAK is a single byte
+        if (data.sak !== undefined) {
+          newSak = data.sak.toString(16).toUpperCase().padStart(2, '0');
+        }
+        
+        scanStatus = `Fob detected! UID: ${uidHex}${newAtqa ? ` ATQA: ${newAtqa}` : ''}${newSak ? ` SAK: ${newSak}` : ''}`;
+        
+        // Auto-stop scan mode after successful detection
+        scanMode = false;
+        scanStatus = '';
+      }
+    }
+  }
+
+  // Subscribe to WebSocket events when scan mode is enabled
+  $effect(() => {
+    if (scanMode) {
+      scanStatus = 'Scanning... Tap a fob near the reader.';
+      return ws.on(handleNfcTagEvent);
+    }
+  });
 
   const loadFobs = async (): Promise<void> => {
     loading = true;
@@ -59,13 +102,31 @@
     }
     // Normalize UID to uppercase
     const uid = newUid.trim().toUpperCase();
-    const result = await addNfcFob(uid, newLabel.trim());
+    const atqa = newAtqa.trim().toUpperCase();
+    const sak = newSak.trim().toUpperCase();
+    const result = await addNfcFob(uid, newLabel.trim(), atqa || undefined, sak || undefined);
     if (result.success) {
       newUid = '';
       newLabel = '';
+      newAtqa = '';
+      newSak = '';
       await loadFobs();
     } else if (isApiError(result)) {
       addError = result.error;
+    }
+  };
+
+  const toggleScanMode = () => {
+    scanMode = !scanMode;
+    scanStatus = scanMode ? 'Scanning... Tap a fob near the reader.' : '';
+    if (!scanMode) {
+      scanStatus = '';
+    }
+    if (scanMode) {
+      newUid = '';
+      newAtqa = '';
+      newSak = '';
+      newLabel = '';
     }
   };
 
@@ -179,13 +240,42 @@
         <!-- Add Fob Form -->
         <div class="card bg-base-200">
           <div class="card-body p-4">
-            <h3 class="font-semibold flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-5 text-primary">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              Add New Fob
-            </h3>
-            <form onsubmit={addFob} class="mt-3 space-y-3">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-5 text-primary">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Add New Fob
+              </h3>
+              <button
+                type="button"
+                class="btn btn-sm {scanMode ? 'btn-warning' : 'btn-ghost'}"
+                onclick={toggleScanMode}
+              >
+                {#if scanMode}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
+                  Stop Scan
+                {:else}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.348 14.651a3.75 3.75 0 0 1 0-5.303m5.304 0a3.75 3.75 0 0 1 0 5.303m-7.425 2.122a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.808-3.808-9.98 0-13.788m13.788 0c3.808 3.808 3.808 9.98 0 13.788M12 12h.008v.008H12V12Z" />
+                  </svg>
+                  Scan Fob
+                {/if}
+              </button>
+            </div>
+            {#if scanMode}
+              <div class="bg-warning/10 border border-warning/30 rounded-lg p-3 mb-3">
+                <p class="text-sm text-warning font-medium flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.348 14.651a3.75 3.75 0 0 1 0-5.303m5.304 0a3.75 3.75 0 0 1 0 5.303m-7.425 2.122a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.808-3.808-9.98 0-13.788m13.788 0c3.808 3.808 3.808 9.98 0 13.788M12 12h.008v.008H12V12Z" />
+                  </svg>
+                  {scanStatus || 'Tap a fob near the reader...'}
+                </p>
+              </div>
+            {/if}
+            <form onsubmit={addFob} class="space-y-3">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div class="form-control">
                   <label class="label">
@@ -199,7 +289,7 @@
                     maxlength="32"
                   />
                   <label class="label">
-                    <span class="label-text-alt text-xs text-base-content/50">Scan a fob to get the UID</span>
+                    <span class="label-text-alt text-xs text-base-content/50">{scanMode ? 'Auto-filled by scan' : 'Enter UID manually or use Scan Fob'}</span>
                   </label>
                 </div>
                 <div class="form-control">
@@ -215,6 +305,41 @@
                   />
                 </div>
               </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="form-control">
+                  <label class="label">
+                    <span class="label-text text-sm">ATQA (hex, optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    bind:value={newAtqa}
+                    placeholder="0004"
+                    class="input input-bordered w-full font-mono"
+                    maxlength="4"
+                  />
+                  <label class="label">
+                    <span class="label-text-alt text-xs text-base-content/50">ISO14443A ATQA</span>
+                  </label>
+                </div>
+                <div class="form-control">
+                  <label class="label">
+                    <span class="label-text text-sm">SAK (hex, optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    bind:value={newSak}
+                    placeholder="08"
+                    class="input input-bordered w-full font-mono"
+                    maxlength="2"
+                  />
+                  <label class="label">
+                    <span class="label-text-alt text-xs text-base-content/50">ISO14443A SAK</span>
+                  </label>
+                </div>
+              </div>
+              <p class="text-xs text-base-content/50 italic">
+                ATQA and SAK provide anti-cloning protection. When both are set, only a fob matching UID + ATQA + SAK will authenticate.
+              </p>
               {#if addError}
                 <div class="text-error text-sm">{addError}</div>
               {/if}
@@ -253,6 +378,8 @@
                     <tr>
                       <th>#</th>
                       <th>UID</th>
+                      <th>ATQA</th>
+                      <th>SAK</th>
                       <th>Label</th>
                       <th class="text-right">Actions</th>
                     </tr>
@@ -262,6 +389,8 @@
                       <tr>
                         <td>{index + 1}</td>
                         <td class="font-mono text-sm">{fob.uid}</td>
+                        <td class="font-mono text-sm">{#if fob.atqa}{fob.atqa}{:else}<span class="text-base-content/40 italic">—</span>{/if}</td>
+                        <td class="font-mono text-sm">{#if fob.sak}{fob.sak}{:else}<span class="text-base-content/40 italic">—</span>{/if}</td>
                         <td>{#if fob.label}{fob.label}{:else}<span class="text-base-content/40 italic">No label</span>{/if}</td>
                         <td class="text-right">
                           <button

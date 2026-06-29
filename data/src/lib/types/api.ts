@@ -546,6 +546,10 @@ export interface NfcFobEntry {
   uid: string;
   /** Optional label/name for the fob */
   label: string;
+  /** ATQA (Answer To Reset) — 2 bytes from ISO14443A anti-collision (hex string, e.g. "0004") */
+  atqa?: string;
+  /** SAK (Select Acknowledge) — 1 byte from ISO14443A (hex string, e.g. "08") */
+  sak?: string;
 }
 
 /**
